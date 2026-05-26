@@ -1,6 +1,25 @@
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QButtonGroup, QRadioButton, QLineEdit, QPushButton
+from PySide6.QtCore import Qt, QObject, Signal, QThread
+from PySide6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QButtonGroup,
+    QRadioButton, QLineEdit, QPushButton, QProgressBar)
 from encryption import encrypt, decrypt
+
+
+class Worker(QObject):
+    progress = Signal(int)
+    finished = Signal()
+
+    def __init__(self, file, password, mode=None):
+        super().__init__()
+        self.file = file
+        self.password = password
+        self.mode = mode
+
+    def run(self):
+        if self.mode is not None:
+            encrypt(self.file, self.password, self.mode, progress_signal=self.progress.emit)
+        else:
+            decrypt(self.file, self.password, progress_signal=self.progress.emit)
+        self.finished.emit()
 
 class MainWindow(QWidget):
     def __init__(self):
@@ -92,14 +111,37 @@ class EncWindow(QWidget):
 
         password = self.password_input.text()
 
-        encrypt(self.file, password, mode)
+        self._add_progress_bar()
 
-        self.close()
+        self._create_worker_thread(Worker(self.file, password, mode))
+
+        self.thread.start()
 
     def _decrypt(self):
         password = self.password_input.text()
-        decrypt(self.file, password)
 
-        self.close()
+        self._add_progress_bar()
+        self._create_worker_thread(Worker(self.file, password))
+
+        self.thread.start()
+
+    def _add_progress_bar(self):
+        self.progress_bar = QProgressBar()
+        self.layout().addWidget(self.progress_bar)
+        self.layout().update()
+
+    def _create_worker_thread(self, worker: Worker):
+        self.thread = QThread()
+        self.worker = worker
+        self.worker.moveToThread(self.thread)
+
+        self.thread.started.connect(self.worker.run)
+        self.worker.progress.connect(self.progress_bar.setValue)
+
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.finished.connect(self.worker.deleteLater)
+        self.thread.finished.connect(self.thread.deleteLater)
+        self.thread.finished.connect(self.close)
+
 
 

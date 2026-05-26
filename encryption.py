@@ -1,6 +1,7 @@
 import os
 import hashlib
 import struct
+import math
 from dataclasses import dataclass
 
 from cryptography.hazmat.primitives.ciphers import Cipher, modes, algorithms
@@ -65,7 +66,7 @@ def get_key(password, salt, length, iterations, lanes, memory_cost):
     )
     return kdf.derive(password.encode())
 
-def encrypt(path: str, password: str, mode: str):
+def encrypt(path: str, password: str, mode: str, progress_signal):
     kdf_settings = (KEY_LENGTH, KDF_ITERATIONS, KDF_LANES, KDF_MEMORY_COST)
 
     salt = os.urandom(SALT_LENGTH)
@@ -97,6 +98,8 @@ def encrypt(path: str, password: str, mode: str):
 
     with open(path, "rb") as input_file, open("./result.bin", "wb") as output_file:
         output_file.write(metadata.as_bytes())
+        TOTAL_CHUNKS = math.ceil(os.path.getsize(path) / CHUNK_SIZE)
+        encrypted_chunks = 0
 
         while True:
             data_chunk = input_file.read(CHUNK_SIZE)
@@ -109,15 +112,19 @@ def encrypt(path: str, password: str, mode: str):
                 data_chunk += padder.finalize()
 
             output_file.write(encryptor.update(data_chunk))
+            encrypted_chunks += 1
+            progress_signal(encrypted_chunks / TOTAL_CHUNKS * 100)
 
         output_file.write(encryptor.finalize())
         print("done")
 
 
 
-def decrypt(path: str, password: str):
+def decrypt(path: str, password: str, progress_signal):
     with open(path, "rb") as input_file, open("./decrypted.bin", "wb") as output_file:
         metadata = Metadata.from_file(input_file)
+        TOTAL_CHUNKS = (os.path.getsize(path)-Metadata.METADATA_SIZE) / CHUNK_SIZE
+        decrypted_chunks = 0
 
         key = get_key(password, metadata.kdf_salt, KEY_LENGTH, metadata.kdf_iterations,
                       metadata.kdf_lanes, metadata.kdf_memory_cost)
@@ -147,6 +154,8 @@ def decrypt(path: str, password: str):
                 decrypted_data = unpadder.update(decrypted_data)
 
             output_file.write(decrypted_data)
+            decrypted_chunks += 1
+            progress_signal(decrypted_chunks / TOTAL_CHUNKS * 100)
 
         output_file.write(decryptor.finalize())
         if unpadder is not None:
