@@ -15,6 +15,7 @@ SALT_LENGTH = 16
 KDF_ITERATIONS = 3
 KDF_LANES = 4
 KDF_MEMORY_COST = 64*1024
+CHUNK_SIZE = 1024*1024
 
 
 @dataclass
@@ -66,21 +67,19 @@ def get_key(password, salt, length, iterations, lanes, memory_cost):
 
 def encrypt(path: str, password: str, mode: str):
     kdf_settings = (KEY_LENGTH, KDF_ITERATIONS, KDF_LANES, KDF_MEMORY_COST)
-    with open(path, "rb") as f:
-        data = f.read()
+
     salt = os.urandom(SALT_LENGTH)
     key = get_key(password, salt, *kdf_settings)
 
     iv = None
     nonce = None
+    padder = None
 
     if mode == "ecb":
         padder = padding.PKCS7(128).padder()
-        data = padder.update(data) + padder.finalize()
         cipher = Cipher(algorithms.AES(key), modes.ECB())
     elif mode == "cbc":
         padder = padding.PKCS7(128).padder()
-        data = padder.update(data) + padder.finalize()
         iv = os.urandom(IV_LENGTH)
         cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
     elif mode == "ctr":
@@ -96,14 +95,29 @@ def encrypt(path: str, password: str, mode: str):
                         kdf_settings[1], kdf_settings[2], kdf_settings[3],
                         hashlib.sha256(key).digest())
 
-    encrypted_data = metadata.as_bytes() + encryptor.update(data) + encryptor.finalize()
+    with open(path, "rb") as input_file, open("./result.bin", "wb") as output_file:
+        output_file.write(metadata.as_bytes())
 
-    with open("./result.bin", "wb") as f:
-        f.write(encrypted_data)
+        while True:
+            data_chunk = input_file.read(CHUNK_SIZE)
+            if not data_chunk: break
+
+            if padder is not None:
+                data_chunk = padder.update(data_chunk)
+
+            if len(data_chunk) < CHUNK_SIZE and padder is not None:
+                data_chunk += padder.finalize()
+
+            output_file.write(encryptor.update(data_chunk))
+
+        output_file.write(encryptor.finalize())
+        print("done")
+
+
 
 def decrypt(path: str, password: str):
-    with open(path, "rb") as f:
-        metadata = Metadata.from_file(f)
+    with open(path, "rb") as input_file, open("./decrypted.bin", "wb") as output_file:
+        metadata = Metadata.from_file(input_file)
 
         key = get_key(password, metadata.kdf_salt, KEY_LENGTH, metadata.kdf_iterations,
                       metadata.kdf_lanes, metadata.kdf_memory_cost)
@@ -111,20 +125,32 @@ def decrypt(path: str, password: str):
         if hashlib.sha256(key).digest() != metadata.key_hash:
             raise ValueError("Incorrect password")
 
-        if metadata.mode == b"ecb": mode = modes.ECB()
-        elif metadata.mode == b"cbc": mode = modes.CBC(metadata.iv_or_nonce)
+        unpadder = None
+        if metadata.mode == b"ecb":
+            mode = modes.ECB()
+            unpadder = padding.PKCS7(128).unpadder()
+        elif metadata.mode == b"cbc":
+            mode = modes.CBC(metadata.iv_or_nonce)
+            unpadder = padding.PKCS7(128).unpadder()
         elif metadata.mode == b"ctr": mode = modes.CTR(metadata.iv_or_nonce)
         else: raise ValueError("Incorrect mode")
 
         decryptor = Cipher(algorithms.AES(key), mode).decryptor()
 
-        data = decryptor.update(f.read()) + decryptor.finalize()
+        while True:
+            data_chunk = input_file.read(CHUNK_SIZE)
+            if not data_chunk: break
 
-        if metadata.mode in (b"ecb", b"cbc"):
-            unpadder = padding.PKCS7(128).unpadder()
-            data = unpadder.update(data) + unpadder.finalize()
+            decrypted_data = decryptor.update(data_chunk)
 
-    with open("./decrypted.bin", "wb") as f:
-        f.write(data)
+            if unpadder is not None:
+                decrypted_data = unpadder.update(decrypted_data)
+
+            output_file.write(decrypted_data)
+
+        output_file.write(decryptor.finalize())
+        if unpadder is not None:
+            output_file.write(unpadder.finalize())
+
 
 
