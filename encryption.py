@@ -66,7 +66,7 @@ def get_key(password, salt, length, iterations, lanes, memory_cost):
     )
     return kdf.derive(password.encode())
 
-def encrypt(path: str, password: str, mode: str, progress_signal):
+def encrypt(path: str, output_path: str, password: str, mode: str, progress_signal):
     kdf_settings = (KEY_LENGTH, KDF_ITERATIONS, KDF_LANES, KDF_MEMORY_COST)
 
     salt = os.urandom(SALT_LENGTH)
@@ -96,7 +96,7 @@ def encrypt(path: str, password: str, mode: str, progress_signal):
                         kdf_settings[1], kdf_settings[2], kdf_settings[3],
                         hashlib.sha256(key).digest())
 
-    with open(path, "rb") as input_file, open("./result.bin", "wb") as output_file:
+    with open(path, "rb") as input_file, open(output_path, "wb") as output_file:
         output_file.write(metadata.as_bytes())
         TOTAL_CHUNKS = math.ceil(os.path.getsize(path) / CHUNK_SIZE)
         encrypted_chunks = 0
@@ -120,8 +120,8 @@ def encrypt(path: str, password: str, mode: str, progress_signal):
 
 
 
-def decrypt(path: str, password: str, progress_signal):
-    with open(path, "rb") as input_file, open("./decrypted.bin", "wb") as output_file:
+def decrypt(path: str, output_path:str, password: str, progress_signal):
+    with open(path, "rb") as input_file:
         metadata = Metadata.from_file(input_file)
         TOTAL_CHUNKS = (os.path.getsize(path)-Metadata.METADATA_SIZE) / CHUNK_SIZE
         decrypted_chunks = 0
@@ -144,22 +144,23 @@ def decrypt(path: str, password: str, progress_signal):
 
         decryptor = Cipher(algorithms.AES(key), mode).decryptor()
 
-        while True:
-            data_chunk = input_file.read(CHUNK_SIZE)
-            if not data_chunk: break
+        with open(output_path, "wb") as output_file:
+            while True:
+                data_chunk = input_file.read(CHUNK_SIZE)
+                if not data_chunk: break
 
-            decrypted_data = decryptor.update(data_chunk)
+                decrypted_data = decryptor.update(data_chunk)
 
+                if unpadder is not None:
+                    decrypted_data = unpadder.update(decrypted_data)
+
+                output_file.write(decrypted_data)
+                decrypted_chunks += 1
+                progress_signal(decrypted_chunks / TOTAL_CHUNKS * 100)
+
+            output_file.write(decryptor.finalize())
             if unpadder is not None:
-                decrypted_data = unpadder.update(decrypted_data)
-
-            output_file.write(decrypted_data)
-            decrypted_chunks += 1
-            progress_signal(decrypted_chunks / TOTAL_CHUNKS * 100)
-
-        output_file.write(decryptor.finalize())
-        if unpadder is not None:
-            output_file.write(unpadder.finalize())
+                output_file.write(unpadder.finalize())
 
 
 

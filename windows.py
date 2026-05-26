@@ -8,18 +8,19 @@ class Worker(QObject):
     finished = Signal()
     error = Signal(str)
 
-    def __init__(self, file, password, mode=None):
+    def __init__(self, file, output_path, password, mode=None):
         super().__init__()
         self.file = file
+        self.output_path = output_path
         self.password = password
         self.mode = mode
 
     def run(self):
         if self.mode is not None:
-            encrypt(self.file, self.password, self.mode, progress_signal=self.progress.emit)
+            encrypt(self.file, self.output_path, self.password, self.mode, progress_signal=self.progress.emit)
         else:
             try:
-                decrypt(self.file, self.password, progress_signal=self.progress.emit)
+                decrypt(self.file, self.output_path, self.password, progress_signal=self.progress.emit)
             except ValueError as e:
                 self.error.emit(str(e))
         self.finished.emit()
@@ -74,6 +75,7 @@ class MainWindow(QWidget):
 class EncWindow(QWidget):
     def __init__(self, dropped_file_path):
         super().__init__()
+        self.output_path = None
         self.file = dropped_file_path
 
         self.resize(400, 200)
@@ -118,8 +120,19 @@ class EncWindow(QWidget):
 
     def click(self):
         if self.encrypt_button.isChecked():
+            output_path, _ = QFileDialog.getSaveFileName(self, "Save a file", "", "*.bin;;*")
+            output_path = output_path.strip()
+
+            if output_path == "": return
+            self.output_path = output_path
             self._encrypt()
+
         elif self.decrypt_button.isChecked():
+            output_path, _ = QFileDialog.getSaveFileName(self, "Save a file", "", "")
+            output_path = output_path.strip()
+
+            if output_path == "": return
+            self.output_path = output_path
             self._decrypt()
 
     def _encrypt(self):
@@ -134,17 +147,14 @@ class EncWindow(QWidget):
             return
 
         self._add_progress_bar()
-
-        self._create_worker_thread(Worker(self.file, password, mode))
-
+        self._create_worker_thread(Worker(self.file, self.output_path, password, mode))
         self.thread.start()
 
     def _decrypt(self):
         password = self.password_input.text()
 
         self._add_progress_bar()
-        self._create_worker_thread(Worker(self.file, password))
-
+        self._create_worker_thread(Worker(self.file, self.output_path, password))
         self.thread.start()
 
     def _add_progress_bar(self):
