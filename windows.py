@@ -94,6 +94,7 @@ class EncWindow(QWidget):
 
         self.password_label = QLabel("Password:")
         self.password_input = QLineEdit("")
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
 
         self.mode_label = QLabel("Mode:")
         self.encryption_mode_rg = QButtonGroup()
@@ -136,7 +137,7 @@ class EncWindow(QWidget):
             else:
                 QMessageBox.information(self, "Choose encryption mode", "For encryption you have to choose one of the available encryption modes")
                 return
-            
+
             output_path, _ = QFileDialog.getSaveFileName(self, "Save a file", "", "*.bin;;*")
             output_path = output_path.strip()
 
