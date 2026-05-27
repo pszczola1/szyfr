@@ -3,6 +3,7 @@ import hashlib
 import struct
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 from cryptography.hazmat.primitives.ciphers import Cipher, modes, algorithms
 from cryptography.hazmat.primitives import padding
@@ -21,7 +22,7 @@ CHUNK_SIZE = 1024*1024
 
 @dataclass
 class Metadata:
-    METADATA_FORMAT = "<5s3s16s16sIII32s"
+    METADATA_FORMAT = "<5s3s16s16sIII32s32s"
     METADATA_SIZE = struct.calcsize(METADATA_FORMAT)
 
     mode: bytes
@@ -32,6 +33,7 @@ class Metadata:
     kdf_lanes: int
     kdf_memory_cost: int
     key_hash: bytes
+    original_extension: bytes
 
     def as_bytes(self):
         return struct.pack(
@@ -43,7 +45,8 @@ class Metadata:
             self.kdf_iterations,
             self.kdf_lanes,
             self.kdf_memory_cost,
-            self.key_hash
+            self.key_hash,
+            self.original_extension
         )
 
     @classmethod
@@ -92,9 +95,11 @@ def encrypt(path: str, output_path: str, password: str, mode: str, progress_sign
     encryptor = cipher.encryptor()
 
     iv_or_nonce = iv or nonce or bytes(16) # 16 zero bytes in case of ecb mode
+    original_extension = Path(path).suffix
     metadata = Metadata(mode.encode(), iv_or_nonce, salt,
                         kdf_settings[1], kdf_settings[2], kdf_settings[3],
-                        hashlib.sha256(key).digest())
+                        hashlib.sha256(key).digest(),
+                        original_extension.encode())
 
     with open(path, "rb") as input_file, open(output_path, "wb") as output_file:
         output_file.write(metadata.as_bytes())
@@ -144,7 +149,8 @@ def decrypt(path: str, output_path:str, password: str, progress_signal):
 
         decryptor = Cipher(algorithms.AES(key), mode).decryptor()
 
-        with open(output_path, "wb") as output_file:
+        original_extension = metadata.original_extension.rstrip(b"x\00").decode()
+        with open(output_path+original_extension, "wb") as output_file:
             while True:
                 data_chunk = input_file.read(CHUNK_SIZE)
                 if not data_chunk: break
