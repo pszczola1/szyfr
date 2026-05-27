@@ -92,8 +92,10 @@ class EncWindow(QWidget):
         self.work_mode_rg.addButton(self.encrypt_button)
         self.work_mode_rg.addButton(self.decrypt_button)
 
-        self.password_input = QLineEdit("Password")
+        self.password_label = QLabel("Password:")
+        self.password_input = QLineEdit("")
 
+        self.mode_label = QLabel("Mode:")
         self.encryption_mode_rg = QButtonGroup()
         self.ecb_button = QRadioButton("ECB")
         self.cbc_button = QRadioButton("CBC")
@@ -107,8 +109,8 @@ class EncWindow(QWidget):
 
         widgets = [self.label,
                    self.encrypt_button, self.decrypt_button,
-                   self.password_input,
-                   self.ecb_button, self.cbc_button, self.ctr_button,
+                   self.password_label, self.password_input,
+                   self.mode_label, self.ecb_button, self.cbc_button, self.ctr_button,
                    self.continue_button]
 
         layout = QVBoxLayout()
