@@ -122,12 +122,27 @@ class EncWindow(QWidget):
 
     def click(self):
         if self.encrypt_button.isChecked():
+            password = self.password_input.text()
+            if len(password) < 8:
+                QMessageBox.critical(self, "Incorrect password", "Password has to be at least 8 characters long")
+                return
+
+            if self.ecb_button.isChecked():
+                mode = "ecb"
+            elif self.cbc_button.isChecked():
+                mode = "cbc"
+            elif self.ctr_button.isChecked():
+                mode = "ctr"
+            else:
+                QMessageBox.information(self, "Choose encryption mode", "For encryption you have to choose one of the available encryption modes")
+                return
+            
             output_path, _ = QFileDialog.getSaveFileName(self, "Save a file", "", "*.bin;;*")
             output_path = output_path.strip()
 
             if output_path == "": return
             self.output_path = output_path
-            self._encrypt()
+            self._encrypt(mode)
 
         elif self.decrypt_button.isChecked():
             output_path, _ = QFileDialog.getSaveFileName(self, "Save a file", "", "")
@@ -137,17 +152,11 @@ class EncWindow(QWidget):
             self.output_path = output_path
             self._decrypt()
 
-    def _encrypt(self):
-        if self.ecb_button.isChecked(): mode = "ecb"
-        elif self.cbc_button.isChecked(): mode = "cbc"
-        elif self.ctr_button.isChecked(): mode = "ctr"
-        else: return
+        else:
+            QMessageBox.information(self, "Encryption or decryption", "You have to choose encryption or decryption")
 
+    def _encrypt(self, mode):
         password = self.password_input.text()
-        if len(password) < 8:
-            QMessageBox.critical(self, "Incorrect password", "Password has to be at least 8 characters long")
-            return
-
         self._add_progress_bar()
         self._create_worker_thread(Worker(self.file, self.output_path, password, mode))
         self.thread.start()
